@@ -48,7 +48,7 @@ const (
 			if (u_drawWireframe) {
 				FragColor = vec4(0.0, 0.0, 0.0, 1.0); // Black color for wireframe
 			} else {
-				FragColor = vec4(VertexColor, 1.0f); // Vertex color for fill
+				FragColor = vec4(VertexColor, 0.7f); // Vertex color for fill with alpha
 			}
 		}
 	` + "\x00"
@@ -68,50 +68,34 @@ type Shape struct {
 	// VBO and EBO IDs are implicitly managed by the VAO binding during setup
 }
 
-// Cube vertices (position 3f, color 3f) - 36 vertices
-var cubeVertices = []float32{
+// --- Geometry Data ---
+
+// Cube vertices (unique 8 vertices for indexed drawing)
+var cubeUniqueVertices = []Vertex{
+	{X: -0.5, Y: -0.5, Z: -0.5}, // 0 Bottom Left Back
+	{X: 0.5, Y: -0.5, Z: -0.5},  // 1 Bottom Right Back
+	{X: 0.5, Y: 0.5, Z: -0.5},   // 2 Top Right Back
+	{X: -0.5, Y: 0.5, Z: -0.5},  // 3 Top Left Back
+	{X: -0.5, Y: -0.5, Z: 0.5},  // 4 Bottom Left Front
+	{X: 0.5, Y: -0.5, Z: 0.5},   // 5 Bottom Right Front
+	{X: 0.5, Y: 0.5, Z: 0.5},    // 6 Top Right Front
+	{X: -0.5, Y: 0.5, Z: 0.5},   // 7 Top Left Front
+}
+
+// Cube faces (12 triangles using indices for cubeUniqueVertices, CCW winding)
+var cubeFaces = [][]int{
 	// Back face
-	-0.5, -0.5, -0.5, 0.0, 0.0, 0.5, // Bottom-left
-	0.5, -0.5, -0.5, 0.5, 0.0, 0.0,
-	0.5, 0.5, -0.5, 0.5, 0.5, 0.0,
-	0.5, 0.5, -0.5, 0.5, 0.5, 0.0,
-	-0.5, 0.5, -0.5, 0.0, 0.5, 0.0,
-	-0.5, -0.5, -0.5, 0.0, 0.0, 0.5,
+	{0, 3, 2}, {2, 1, 0},
 	// Front face
-	-0.5, -0.5, 0.5, 0.0, 0.0, 1.0,
-	0.5, 0.5, 0.5, 1.0, 1.0, 0.0,
-	0.5, -0.5, 0.5, 1.0, 0.0, 0.0,
-	0.5, 0.5, 0.5, 1.0, 1.0, 0.0,
-	-0.5, -0.5, 0.5, 0.0, 0.0, 1.0,
-	-0.5, 0.5, 0.5, 0.0, 1.0, 0.0,
+	{4, 5, 6}, {6, 7, 4},
 	// Left face
-	-0.5, 0.5, 0.5, 0.0, 1.0, 0.5,
-	-0.5, -0.5, -0.5, 0.5, 0.0, 1.0,
-	-0.5, 0.5, -0.5, 0.5, 1.0, 1.0,
-	-0.5, -0.5, -0.5, 0.5, 0.0, 1.0,
-	-0.5, 0.5, 0.5, 0.0, 1.0, 0.5,
-	-0.5, -0.5, 0.5, 0.0, 0.0, 0.5,
+	{7, 3, 0}, {0, 4, 7},
 	// Right face
-	0.5, 0.5, 0.5, 1.0, 1.0, 0.5,
-	0.5, 0.5, -0.5, 1.0, 1.0, 1.0,
-	0.5, -0.5, -0.5, 1.0, 0.0, 1.0,
-	0.5, -0.5, -0.5, 1.0, 0.0, 1.0,
-	0.5, -0.5, 0.5, 1.0, 0.0, 0.5,
-	0.5, 0.5, 0.5, 1.0, 1.0, 0.5,
+	{5, 1, 2}, {2, 6, 5},
 	// Bottom face
-	-0.5, -0.5, -0.5, 0.0, 0.5, 0.5,
-	0.5, -0.5, 0.5, 1.0, 0.0, 0.0,
-	0.5, -0.5, -0.5, 1.0, 0.5, 0.0,
-	0.5, -0.5, 0.5, 1.0, 0.0, 0.0,
-	-0.5, -0.5, -0.5, 0.0, 0.5, 0.5,
-	-0.5, -0.5, 0.5, 0.0, 0.0, 0.0,
+	{0, 1, 5}, {5, 4, 0},
 	// Top face
-	-0.5, 0.5, -0.5, 0.0, 0.5, 1.0,
-	0.5, 0.5, -0.5, 1.0, 0.5, 1.0,
-	0.5, 0.5, 0.5, 1.0, 0.0, 1.0,
-	0.5, 0.5, 0.5, 1.0, 0.0, 1.0,
-	-0.5, 0.5, 0.5, 0.0, 0.0, 1.0,
-	-0.5, 0.5, -0.5, 0.0, 0.5, 1.0,
+	{3, 7, 6}, {6, 2, 3},
 }
 
 // Octahedron vertices (position 3f, color 3f) - 24 vertices
@@ -183,11 +167,44 @@ var (
 	}
 )
 
+// Tetrahedron data
+var (
+	sqrt2                    = float32(math.Sqrt(2.0))
+	sqrt6                    = float32(math.Sqrt(6.0))
+	scaleFactorTetra float32 = 0.5 // Scale factor for tetrahedron
+
+	// Tetrahedron vertices (centered at origin)
+	tetraVertices = []Vertex{
+		{X: 1.0 * scaleFactorTetra, Y: 0.0 * scaleFactorTetra, Z: -1.0 / sqrt2 * scaleFactorTetra},  // 0
+		{X: -1.0 * scaleFactorTetra, Y: 0.0 * scaleFactorTetra, Z: -1.0 / sqrt2 * scaleFactorTetra}, // 1
+		{X: 0.0 * scaleFactorTetra, Y: 1.0 * scaleFactorTetra, Z: 1.0 / sqrt2 * scaleFactorTetra},   // 2
+		{X: 0.0 * scaleFactorTetra, Y: -1.0 * scaleFactorTetra, Z: 1.0 / sqrt2 * scaleFactorTetra},  // 3
+	}
+
+	// Tetrahedron faces (4 triangles, CCW winding)
+	tetraFaces = [][]int{
+		{0, 2, 3}, // Front face
+		{1, 3, 2}, // Left face (? Check winding)
+		{0, 1, 2}, // Right face (? Check winding)
+		{0, 3, 1}, // Bottom face (? Check winding)
+		// Let's re-verify CCW winding based on vertices
+		// Face 0: (0, 2, 3) - OK
+		// Face 1: (1, 3, 2) -> (1, 2, 3) for CCW
+		// Face 2: (0, 1, 2) -> (0, 2, 1) ?? No, (0,1,2) seems correct for right face.
+		// Face 3: (0, 3, 1) -> (0, 1, 3) for CCW
+		// Corrected faces:
+		{0, 2, 3},
+		{1, 2, 3}, // Corrected
+		{0, 1, 2}, // Corrected
+		{0, 1, 3}, // Corrected
+	}
+)
+
 // Dodecahedron data (adapted from Stack Overflow example)
 var (
 	phiDodeca                 = (1.0 + float32(math.Sqrt(5.0))) / 2.0 // Golden ratio
 	invPhiDodeca              = 1.0 / phiDodeca                       // 1 / phi
-	scaleFactorDodeca float32 = 0.3                                   // Keep scale factor
+	scaleFactorDodeca float32 = 0.35                                  // Slightly larger scale for visibility (restored scale)
 
 	// Vertices based on Stack Overflow example (using phi and 1/phi)
 	dodecaVertices = []Vertex{
@@ -213,34 +230,18 @@ var (
 		{X: -phiDodeca * scaleFactorDodeca, Y: 0 * scaleFactorDodeca, Z: -invPhiDodeca * scaleFactorDodeca}, // 19
 	}
 
-	// Faces based on Stack Overflow example (assuming CCW for triangle fan)
+	// Faces based on Stack Overflow example (Original order)
 	dodecaFaces = [][]int{
-		{0, 16, 2, 10, 8},  // 0
-		{0, 8, 4, 18, 12},  // 1 Corrected 14->18 based on visualization
-		{16, 17, 1, 9, 12}, // 2 Corrected 1->9, 12->1 (swapped?), 0->16, 12->17, seems complex. Let's stick to SO faces directly first
-		// Using faces directly from SO post:
-		{0, 16, 2, 10, 8},
-		{0, 8, 4, 14, 12},  // SO face 1
-		{16, 17, 1, 12, 0}, // SO face 2
-		{1, 9, 11, 3, 17},  // SO face 3
-		{1, 12, 14, 4, 9},  // SO face 4 - corrected 5->4
-		{2, 13, 15, 6, 10}, // SO face 5
-		{13, 3, 17, 16, 2}, // SO face 6
-		{3, 11, 7, 15, 13}, // SO face 7
-		{4, 8, 10, 6, 18},  // SO face 8 - corrected 6->10, 18->6?
-		{14, 5, 19, 18, 4}, // SO face 9
-		{5, 19, 7, 11, 9},  // SO face 10
-		{15, 7, 19, 18, 6}, // SO face 11 - corrected 6->18, 18->6?
 		// Final check against the SO `faces` array directly
 		{0, 16, 2, 10, 8},
 		{0, 8, 4, 14, 12},
 		{16, 17, 1, 12, 0},
 		{1, 9, 11, 3, 17},
-		{1, 12, 14, 5, 9}, // Corrected 4->5
+		{1, 12, 14, 5, 9},
 		{2, 13, 15, 6, 10},
 		{13, 3, 17, 16, 2},
 		{3, 11, 7, 15, 13},
-		{4, 8, 10, 6, 18}, // Corrected vertex order
+		{4, 8, 10, 6, 18},
 		{14, 5, 19, 18, 4},
 		{5, 19, 7, 11, 9},
 		{15, 7, 19, 18, 6},
@@ -354,6 +355,9 @@ func drawShape(shape Shape, program uint32, model mgl32.Mat4, modelLoc int32, wi
 	gl.UniformMatrix4fv(modelLoc, 1, false, &model[0])
 	gl.BindVertexArray(shape.VaoID)
 
+	// For transparency: disable depth writing, but keep depth testing
+	gl.DepthMask(false)
+
 	// Draw Fill
 	gl.Enable(gl.POLYGON_OFFSET_FILL)
 	gl.PolygonMode(gl.FRONT_AND_BACK, gl.FILL)
@@ -365,6 +369,9 @@ func drawShape(shape Shape, program uint32, model mgl32.Mat4, modelLoc int32, wi
 		gl.DrawArrays(shape.DrawMode, 0, shape.ElementCount)
 	}
 	gl.Disable(gl.POLYGON_OFFSET_FILL)
+
+	// Re-enable depth writing for the opaque wireframe
+	gl.DepthMask(true)
 
 	// Draw Wireframe
 	gl.Enable(gl.POLYGON_OFFSET_LINE)
@@ -418,22 +425,42 @@ func main() {
 	gl.UseProgram(program) // Activate shader program once
 
 	// --- Setup Shapes ---
-	cubeShape := setupBuffersArrays(cubeVertices)
+	// Cube (Indexed Drawing)
+	cubeDrawableVertices := generateUniqueDrawableVertices(cubeUniqueVertices, 0.5) // Use 0.5 as base scale for cube color
+	cubeTriangleIndices := generateTriangleIndices(cubeFaces)
+	cubeShape := setupBuffersElements(cubeDrawableVertices, cubeTriangleIndices)
+
+	// Octahedron (Array Drawing - kept for diversity)
 	octaShape := setupBuffersArrays(octahedronVertices)
 
+	// Icosahedron (Indexed Drawing)
 	icoDrawableVertices := generateUniqueDrawableVertices(icoVertices, scaleFactorIco)
 	icoTriangleIndices := generateTriangleIndices(icoFaces)
 	icoShape := setupBuffersElements(icoDrawableVertices, icoTriangleIndices)
 
-	dodecaDrawableVertices := generateUniqueDrawableVertices(dodecaVertices, scaleFactorDodeca)
-	dodecaTriangleIndices := generateTriangleIndices(dodecaFaces)
-	dodecaShape := setupBuffersElements(dodecaDrawableVertices, dodecaTriangleIndices)
+	// Tetrahedron (Indexed Drawing)
+	tetraDrawableVertices := generateUniqueDrawableVertices(tetraVertices, scaleFactorTetra)
+	tetraTriangleIndices := generateTriangleIndices(tetraFaces)
+	tetraShape := setupBuffersElements(tetraDrawableVertices, tetraTriangleIndices)
+
+	// Dodecahedron data and setup removed due to rendering issues
+	/*
+		// Dodecahedron (Indexed Drawing - DEBUG: Draw only the first face)
+		dodecaDrawableVertices := generateUniqueDrawableVertices(dodecaVertices, scaleFactorDodeca)
+		// dodecaTriangleIndices := generateTriangleIndices(dodecaFaces)
+		dodecaTriangleIndices := generateTriangleIndices(dodecaFaces[0:1]) // Use only the first face
+		dodecaShape := setupBuffersElements(dodecaDrawableVertices, dodecaTriangleIndices)
+	*/
 
 	// Configure global settings
 	gl.Enable(gl.DEPTH_TEST)
 	gl.DepthFunc(gl.LESS)
 	gl.ClearColor(0.7, 0.7, 0.7, 1.0) // Lighter grey background
-	gl.Disable(gl.CULL_FACE)          // Disable back-face culling for debugging
+	gl.Disable(gl.CULL_FACE)          // Disable again to see all triangles
+
+	// Enable blending for transparency
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
 	// Enable polygon offset (used in drawShape)
 	// Note: We enable/disable specific offsets (FILL/LINE) within drawShape
@@ -456,14 +483,16 @@ func main() {
 	angleCube := float32(0.0)
 	angleOcta := float32(math.Pi / 4.0)
 	angleIco := float32(math.Pi / 2.0)
-	angleDodeca := float32(math.Pi * 3.0 / 4.0) // Start dodecahedron at a different angle
+	angleTetra := float32(0.0) // Start tetra angle
+	// angleDodeca := float32(math.Pi * 3.0 / 4.0) // Remove dodecahedron angle
 	previousTime := glfw.GetTime()
 
 	// Define rotation axes
 	rotationAxisCube := mgl32.Vec3{0.5, 1.0, 0.0}.Normalize()
 	rotationAxisOcta := mgl32.Vec3{0.0, 1.0, 0.5}.Normalize()
 	rotationAxisIco := mgl32.Vec3{1.0, 0.0, 0.5}.Normalize()
-	rotationAxisDodeca := mgl32.Vec3{0.5, 0.0, 1.0}.Normalize() // New axis for dodecahedron
+	rotationAxisTetra := mgl32.Vec3{0.0, 1.0, 0.0}.Normalize() // Rotate around Y axis
+	// rotationAxisDodeca := mgl32.Vec3{0.5, 0.0, 1.0}.Normalize() // Remove dodecahedron axis
 
 	// Main loop
 	for !window.ShouldClose() {
@@ -477,31 +506,31 @@ func main() {
 
 		// --- Update and Draw Cube ---
 		angleCube += mgl32.DegToRad(50.0) * deltaTime
-		modelCube := mgl32.Translate3D(-1.2, 0.8, 0).Mul4( // Position cube top-left
+		modelCube := mgl32.Translate3D(-1.3, 0.7, 0).Mul4( // Position cube top-left
 			mgl32.HomogRotate3D(angleCube, rotationAxisCube),
 		)
 		drawShape(cubeShape, program, modelCube, modelLoc, wireframeLoc)
 
-		// --- Update and Draw Octahedron ---
-		angleOcta += mgl32.DegToRad(70.0) * deltaTime
-		modelOcta := mgl32.Translate3D(1.2, 0.8, 0).Mul4( // Position octahedron top-right
-			mgl32.HomogRotate3D(angleOcta, rotationAxisOcta),
+		// --- Update and Draw Tetrahedron ---
+		angleTetra += mgl32.DegToRad(80.0) * deltaTime     // Rotation speed for tetra
+		modelTetra := mgl32.Translate3D(1.3, 0.7, 0).Mul4( // Position tetrahedron top-right
+			mgl32.HomogRotate3D(angleTetra, rotationAxisTetra),
 		)
-		drawShape(octaShape, program, modelOcta, modelLoc, wireframeLoc)
+		drawShape(tetraShape, program, modelTetra, modelLoc, wireframeLoc)
 
 		// --- Update and Draw Icosahedron ---
 		angleIco += mgl32.DegToRad(90.0) * deltaTime
-		modelIco := mgl32.Translate3D(-1.2, -0.8, 0).Mul4( // Position icosahedron bottom-left
+		modelIco := mgl32.Translate3D(-1.3, -0.7, 0).Mul4( // Position icosahedron bottom-left
 			mgl32.HomogRotate3D(angleIco, rotationAxisIco),
 		)
 		drawShape(icoShape, program, modelIco, modelLoc, wireframeLoc)
 
-		// --- Update and Draw Dodecahedron ---
-		angleDodeca += mgl32.DegToRad(60.0) * deltaTime
-		modelDodeca := mgl32.Translate3D(1.2, -0.8, 0).Mul4( // Position dodecahedron bottom-right
-			mgl32.HomogRotate3D(angleDodeca, rotationAxisDodeca),
+		// --- Update and Draw Octahedron ---
+		angleOcta += mgl32.DegToRad(70.0) * deltaTime
+		modelOcta := mgl32.Translate3D(1.3, -0.7, 0).Mul4( // Position octahedron bottom-right
+			mgl32.HomogRotate3D(angleOcta, rotationAxisOcta),
 		)
-		drawShape(dodecaShape, program, modelDodeca, modelLoc, wireframeLoc)
+		drawShape(octaShape, program, modelOcta, modelLoc, wireframeLoc)
 
 		// Reset polygon mode to default (optional, good practice)
 		gl.PolygonMode(gl.FRONT_AND_BACK, gl.FILL)
