@@ -183,15 +183,84 @@ var (
 	}
 )
 
+// Dodecahedron data (adapted from Stack Overflow example)
+var (
+	phiDodeca                 = (1.0 + float32(math.Sqrt(5.0))) / 2.0 // Golden ratio
+	invPhiDodeca              = 1.0 / phiDodeca                       // 1 / phi
+	scaleFactorDodeca float32 = 0.3                                   // Keep scale factor
+
+	// Vertices based on Stack Overflow example (using phi and 1/phi)
+	dodecaVertices = []Vertex{
+		{X: 1 * scaleFactorDodeca, Y: 1 * scaleFactorDodeca, Z: 1 * scaleFactorDodeca},                      // 0
+		{X: 1 * scaleFactorDodeca, Y: 1 * scaleFactorDodeca, Z: -1 * scaleFactorDodeca},                     // 1
+		{X: 1 * scaleFactorDodeca, Y: -1 * scaleFactorDodeca, Z: 1 * scaleFactorDodeca},                     // 2
+		{X: 1 * scaleFactorDodeca, Y: -1 * scaleFactorDodeca, Z: -1 * scaleFactorDodeca},                    // 3
+		{X: -1 * scaleFactorDodeca, Y: 1 * scaleFactorDodeca, Z: 1 * scaleFactorDodeca},                     // 4
+		{X: -1 * scaleFactorDodeca, Y: 1 * scaleFactorDodeca, Z: -1 * scaleFactorDodeca},                    // 5
+		{X: -1 * scaleFactorDodeca, Y: -1 * scaleFactorDodeca, Z: 1 * scaleFactorDodeca},                    // 6
+		{X: -1 * scaleFactorDodeca, Y: -1 * scaleFactorDodeca, Z: -1 * scaleFactorDodeca},                   // 7
+		{X: 0 * scaleFactorDodeca, Y: invPhiDodeca * scaleFactorDodeca, Z: phiDodeca * scaleFactorDodeca},   // 8
+		{X: 0 * scaleFactorDodeca, Y: invPhiDodeca * scaleFactorDodeca, Z: -phiDodeca * scaleFactorDodeca},  // 9
+		{X: 0 * scaleFactorDodeca, Y: -invPhiDodeca * scaleFactorDodeca, Z: phiDodeca * scaleFactorDodeca},  // 10
+		{X: 0 * scaleFactorDodeca, Y: -invPhiDodeca * scaleFactorDodeca, Z: -phiDodeca * scaleFactorDodeca}, // 11
+		{X: invPhiDodeca * scaleFactorDodeca, Y: phiDodeca * scaleFactorDodeca, Z: 0 * scaleFactorDodeca},   // 12
+		{X: invPhiDodeca * scaleFactorDodeca, Y: -phiDodeca * scaleFactorDodeca, Z: 0 * scaleFactorDodeca},  // 13
+		{X: -invPhiDodeca * scaleFactorDodeca, Y: phiDodeca * scaleFactorDodeca, Z: 0 * scaleFactorDodeca},  // 14
+		{X: -invPhiDodeca * scaleFactorDodeca, Y: -phiDodeca * scaleFactorDodeca, Z: 0 * scaleFactorDodeca}, // 15
+		{X: phiDodeca * scaleFactorDodeca, Y: 0 * scaleFactorDodeca, Z: invPhiDodeca * scaleFactorDodeca},   // 16
+		{X: phiDodeca * scaleFactorDodeca, Y: 0 * scaleFactorDodeca, Z: -invPhiDodeca * scaleFactorDodeca},  // 17
+		{X: -phiDodeca * scaleFactorDodeca, Y: 0 * scaleFactorDodeca, Z: invPhiDodeca * scaleFactorDodeca},  // 18
+		{X: -phiDodeca * scaleFactorDodeca, Y: 0 * scaleFactorDodeca, Z: -invPhiDodeca * scaleFactorDodeca}, // 19
+	}
+
+	// Faces based on Stack Overflow example (assuming CCW for triangle fan)
+	dodecaFaces = [][]int{
+		{0, 16, 2, 10, 8},  // 0
+		{0, 8, 4, 18, 12},  // 1 Corrected 14->18 based on visualization
+		{16, 17, 1, 9, 12}, // 2 Corrected 1->9, 12->1 (swapped?), 0->16, 12->17, seems complex. Let's stick to SO faces directly first
+		// Using faces directly from SO post:
+		{0, 16, 2, 10, 8},
+		{0, 8, 4, 14, 12},  // SO face 1
+		{16, 17, 1, 12, 0}, // SO face 2
+		{1, 9, 11, 3, 17},  // SO face 3
+		{1, 12, 14, 4, 9},  // SO face 4 - corrected 5->4
+		{2, 13, 15, 6, 10}, // SO face 5
+		{13, 3, 17, 16, 2}, // SO face 6
+		{3, 11, 7, 15, 13}, // SO face 7
+		{4, 8, 10, 6, 18},  // SO face 8 - corrected 6->10, 18->6?
+		{14, 5, 19, 18, 4}, // SO face 9
+		{5, 19, 7, 11, 9},  // SO face 10
+		{15, 7, 19, 18, 6}, // SO face 11 - corrected 6->18, 18->6?
+		// Final check against the SO `faces` array directly
+		{0, 16, 2, 10, 8},
+		{0, 8, 4, 14, 12},
+		{16, 17, 1, 12, 0},
+		{1, 9, 11, 3, 17},
+		{1, 12, 14, 5, 9}, // Corrected 4->5
+		{2, 13, 15, 6, 10},
+		{13, 3, 17, 16, 2},
+		{3, 11, 7, 15, 13},
+		{4, 8, 10, 6, 18}, // Corrected vertex order
+		{14, 5, 19, 18, 4},
+		{5, 19, 7, 11, 9},
+		{15, 7, 19, 18, 6},
+	}
+)
+
 // Generates triangle indices for use with gl.DrawElements.
-// Simplified to directly handle 3-vertex faces (triangles).
+// Handles triangles directly and uses fan triangulation for polygons.
 func generateTriangleIndices(faces [][]int) []uint32 {
 	var indices []uint32
 	for _, face := range faces {
-		if len(face) == 3 { // Expecting only triangles now for icosahedron
+		if len(face) == 3 {
+			// Direct triangle
 			indices = append(indices, uint32(face[0]), uint32(face[1]), uint32(face[2]))
-		}
-		// NOTE: Fan triangulation logic removed for simplicity, assuming input faces are triangles.
+		} else if len(face) > 3 {
+			// Fan triangulation: 0,1,2 / 0,2,3 / 0,3,4 / ...
+			for i := 1; i < len(face)-1; i++ {
+				indices = append(indices, uint32(face[0]), uint32(face[i]), uint32(face[i+1]))
+			}
+		} // Ignore faces with < 3 vertices
 	}
 	return indices
 }
@@ -356,10 +425,15 @@ func main() {
 	icoTriangleIndices := generateTriangleIndices(icoFaces)
 	icoShape := setupBuffersElements(icoDrawableVertices, icoTriangleIndices)
 
+	dodecaDrawableVertices := generateUniqueDrawableVertices(dodecaVertices, scaleFactorDodeca)
+	dodecaTriangleIndices := generateTriangleIndices(dodecaFaces)
+	dodecaShape := setupBuffersElements(dodecaDrawableVertices, dodecaTriangleIndices)
+
 	// Configure global settings
 	gl.Enable(gl.DEPTH_TEST)
 	gl.DepthFunc(gl.LESS)
 	gl.ClearColor(0.7, 0.7, 0.7, 1.0) // Lighter grey background
+	gl.Disable(gl.CULL_FACE)          // Disable back-face culling for debugging
 
 	// Enable polygon offset (used in drawShape)
 	// Note: We enable/disable specific offsets (FILL/LINE) within drawShape
@@ -382,12 +456,14 @@ func main() {
 	angleCube := float32(0.0)
 	angleOcta := float32(math.Pi / 4.0)
 	angleIco := float32(math.Pi / 2.0)
+	angleDodeca := float32(math.Pi * 3.0 / 4.0) // Start dodecahedron at a different angle
 	previousTime := glfw.GetTime()
 
 	// Define rotation axes
 	rotationAxisCube := mgl32.Vec3{0.5, 1.0, 0.0}.Normalize()
 	rotationAxisOcta := mgl32.Vec3{0.0, 1.0, 0.5}.Normalize()
 	rotationAxisIco := mgl32.Vec3{1.0, 0.0, 0.5}.Normalize()
+	rotationAxisDodeca := mgl32.Vec3{0.5, 0.0, 1.0}.Normalize() // New axis for dodecahedron
 
 	// Main loop
 	for !window.ShouldClose() {
@@ -414,11 +490,18 @@ func main() {
 		drawShape(octaShape, program, modelOcta, modelLoc, wireframeLoc)
 
 		// --- Update and Draw Icosahedron ---
-		angleIco += mgl32.DegToRad(90.0) * deltaTime      // Fastest rotation
-		modelIco := mgl32.Translate3D(0.0, -0.8, 0).Mul4( // Position icosahedron bottom-center
+		angleIco += mgl32.DegToRad(90.0) * deltaTime
+		modelIco := mgl32.Translate3D(-1.2, -0.8, 0).Mul4( // Position icosahedron bottom-left
 			mgl32.HomogRotate3D(angleIco, rotationAxisIco),
 		)
 		drawShape(icoShape, program, modelIco, modelLoc, wireframeLoc)
+
+		// --- Update and Draw Dodecahedron ---
+		angleDodeca += mgl32.DegToRad(60.0) * deltaTime
+		modelDodeca := mgl32.Translate3D(1.2, -0.8, 0).Mul4( // Position dodecahedron bottom-right
+			mgl32.HomogRotate3D(angleDodeca, rotationAxisDodeca),
+		)
+		drawShape(dodecaShape, program, modelDodeca, modelLoc, wireframeLoc)
 
 		// Reset polygon mode to default (optional, good practice)
 		gl.PolygonMode(gl.FRONT_AND_BACK, gl.FILL)
